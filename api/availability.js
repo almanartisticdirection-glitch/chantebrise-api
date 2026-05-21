@@ -1,32 +1,54 @@
-const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
-const OWNER_EMAIL = process.env.OWNER_EMAIL || 'touriafadi@yahoo.fr';
+const ical = require('node-ical');
+
+const ICAL_LINKS = {
+  duplex: [
+    'https://ical.booking.com/v1/export?t=b41c71ac-a607-49a6-b9b8-f0802eea4afc',
+    'https://www.airbnb.fr/calendar/ical/1577704383573676820.ics?t=60d72ccc3899473a9e2e467ec5c5aa44'
+  ],
+  exotique: [
+    'https://ical.booking.com/v1/export?t=bfc24e42-f847-4096-b3eb-0ce05eea132d',
+    'https://www.airbnb.fr/calendar/ical/1577682619862019920.ics?t=7907dfe5c22544ec93fa1538de8cea98'
+  ],
+  bleue: [
+    'https://ical.booking.com/v1/export?t=c2f06313-dd42-4fea-9116-8ea5120fc61e',
+    'https://www.airbnb.fr/calendar/ical/1564825358361348976.ics?t=44fbdc9d67c94b069cc598a64a6688b9'
+  ]
+};
+
+async function getBlockedDates(room) {
+  const links = ICAL_LINKS[room] || [];
+  const blocked = new Set();
+  for (const url of links) {
+    try {
+      const events = await ical.async.fromURL(url);
+      for (const key in events) {
+        const ev = events[key];
+        if (ev.type !== 'VEVENT') continue;
+        const start = new Date(ev.start);
+        const end = new Date(ev.end);
+        const cur = new Date(start);
+        while (cur < end) {
+          blocked.add(cur.toISOString().split('T')[0]);
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+    } catch (e) {
+      console.error('iCal error:', e.message);
+    }
+  }
+  return Array.from(blocked).sort();
+}
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  const { nom, email, chambre, arrivee, depart, personnes, montant } = req.body;
-  const chambres = { duplex: 'Duplex', exotique: 'Chambre Exotique', bleue: 'Chambre Bleue' };
-  const chambreNom = chambres[chambre] || chambre;
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+  const room = req.query.room || 'duplex';
   try {
-    await resend.emails.send({
-      from: 'Chante-Brise <onboarding@resend.dev>',
-      to: OWNER_EMAIL,
-      subject: 'Nouvelle reservation - ' + chambreNom,
-      html: '<div style="font-family:Georgia,serif;max-width:500px;padding:32px;background:#F8F3E8;border-radius:12px"><h2 style="color:#2A4A12">Nouvelle reservation</h2><p><b>Chambre:</b> ' + chambreNom + '</p><p><b>Client:</b> ' + nom + '</p><p><b>Email:</b> ' + email + '</p><p><b>Arrivee:</b> ' + arrivee + '</p><p><b>Depart:</b> ' + depart + '</p><p><b>Personnes:</b> ' + personnes + '</p><p><b>Montant:</b> ' + montant + '</p></div>'
-    });
-    if (email) {
-      await resend.emails.send({
-        from: 'Chante-Brise <onboarding@resend.dev>',
-        to: email,
-        subject: 'Votre reservation a Chante-Brise est confirmee',
-        html: '<div style="font-family:Georgia,serif;max-width:500px;padding:32px;background:#F8F3E8;border-radius:12px"><h2 style="color:#2A4A12">Reservation confirmee</h2><p>Bonjour ' + nom + ',</p><p>Votre reservation est confirmee.</p><p><b>Chambre:</b> ' + chambreNom + '</p><p><b>Arrivee:</b> ' + arrivee + ' des 15h00</p><p><b>Depart:</b> ' + depart + ' avant 11h00</p><p>Contact : Chante-Brise - 06 62 13 62 12</p></div>'
-      });
-    }
-    res.status(200).json({ success: true });
+    const blocked = await getBlockedDates(room);
+    res.status(200).json({ room, blocked, updated: new Date().toISOString() });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
