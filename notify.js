@@ -1,9 +1,7 @@
-const twilio = require('twilio');
+const { Resend } = require('resend');
 
-const TWILIO_SID = process.env.TWILIO_SID;
-const TWILIO_TOKEN = process.env.TWILIO_TOKEN;
-const TWILIO_FROM = process.env.TWILIO_FROM;
-const OWNER_PHONE = '+33662136212';
+const resend = new Resend(process.env.RESEND_API_KEY);
+const OWNER_EMAIL = process.env.OWNER_EMAIL || 'touriafadi@yahoo.fr';
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -12,45 +10,30 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { nom, email, tel, chambre, arrivee, depart, personnes, message, montant } = req.body;
-
+  const { nom, email, tel, chambre, arrivee, depart, personnes, montant } = req.body;
   const chambres = { duplex: 'Duplex', exotique: 'Chambre Exotique', bleue: 'Chambre Bleue' };
   const chambreNom = chambres[chambre] || chambre;
 
-  // SMS à la propriétaire
-  const smsOwner = `🏡 CHANTE-BRISE - Nouvelle réservation !
-Chambre: ${chambreNom}
-Client: ${nom}
-Tél: ${tel}
-Arrivée: ${arrivee}
-Départ: ${depart}
-Personnes: ${personnes}
-Montant: ${montant}€
-Email: ${email}`;
-
-  // SMS de confirmation au client
-  const smsClient = `Bonjour ${nom} ! Votre réservation à Chante-Brise Étretat est confirmée.
-Chambre: ${chambreNom} | Arrivée: ${arrivee} | Départ: ${depart}
-À bientôt ! Touria - 06 62 13 62 12`;
-
   try {
-    if (TWILIO_SID && TWILIO_TOKEN && TWILIO_FROM) {
-      const client = twilio(TWILIO_SID, TWILIO_TOKEN);
-      // SMS propriétaire
-      await client.messages.create({
-        body: smsOwner, from: TWILIO_FROM, to: OWNER_PHONE
+    await resend.emails.send({
+      from: 'Chante-Brise <onboarding@resend.dev>',
+      to: OWNER_EMAIL,
+      subject: `🏡 Nouvelle réservation — ${chambreNom}`,
+      html: `<div style="font-family:Georgia,serif;max-width:500px;margin:0 auto;padding:32px;background:#F8F3E8;border-radius:12px"><h2 style="color:#2A4A12">Nouvelle réservation — ${chambreNom}</h2><p><b>Client:</b> ${nom}</p><p><b>Email:</b> ${email}</p><p><b>Tél:</b> ${tel}</p><p><b>Arrivée:</b> ${arrivee}</p><p><b>Départ:</b> ${depart}</p><p><b>Personnes:</b> ${personnes}</p><p><b>Montant:</b> ${montant}</p></div>`
+    });
+
+    if (email) {
+      await resend.emails.send({
+        from: 'Chante-Brise <onboarding@resend.dev>',
+        to: email,
+        subject: `Votre réservation à Chante-Brise est confirmée ✓`,
+        html: `<div style="font-family:Georgia,serif;max-width:500px;margin:0 auto;padding:32px;background:#F8F3E8;border-radius:12px"><h2 style="color:#2A4A12">Réservation confirmée</h2><p>Bonjour ${nom},</p><p>Votre réservation est confirmée !</p><p><b>Chambre:</b> ${chambreNom}</p><p><b>Arrivée:</b> ${arrivee} dès 15h00</p><p><b>Départ:</b> ${depart} avant 11h00</p><p>Contact: Touria — 06 62 13 62 12</p></div>`
       });
-      // SMS client si numéro fourni
-      if (tel && tel.length > 8) {
-        const telFormate = tel.startsWith('0') ? '+33' + tel.slice(1) : tel;
-        await client.messages.create({
-          body: smsClient, from: TWILIO_FROM, to: telFormate
-        });
-      }
     }
-    res.status(200).json({ success: true, message: 'Notifications envoyées' });
+
+    res.status(200).json({ success: true });
   } catch (e) {
-    console.error('SMS error:', e.message);
+    console.error('Email error:', e);
     res.status(500).json({ error: e.message });
   }
 };
