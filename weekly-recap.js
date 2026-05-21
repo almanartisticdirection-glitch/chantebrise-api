@@ -1,30 +1,26 @@
-// Appelé chaque dimanche via Vercel Cron
-const twilio = require('twilio');
+const { Resend } = require('resend');
 
-const OWNER_PHONE = '+33662136212';
+const resend = new Resend(process.env.RESEND_API_KEY);
+const OWNER_EMAIL = process.env.OWNER_EMAIL || 'touriafadi@yahoo.fr';
 
 module.exports = async (req, res) => {
-  // Vérification sécurité cron
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // Ici on lirait les réservations de la semaine depuis la BDD
-  // Pour l'instant on envoie un rappel simple
-  const recap = `📅 RÉCAP SEMAINE - Chante-Brise
-Dimanche ${new Date().toLocaleDateString('fr-FR')}
-
-Consultez votre calendrier pour les arrivées de la semaine.
-Pensez à préparer les chambres reservées !
-
-Bonne semaine Touria 🌸`;
+  const today = new Date();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - today.getDay() + 1);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = (d) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
 
   try {
-    const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
-    await client.messages.create({
-      body: recap,
-      from: process.env.TWILIO_FROM,
-      to: OWNER_PHONE
+    await resend.emails.send({
+      from: 'Chante-Brise <onboarding@resend.dev>',
+      to: OWNER_EMAIL,
+      subject: `📅 Récap semaine du ${fmt(monday)} — Chante-Brise`,
+      html: `<div style="font-family:Georgia,serif;max-width:500px;margin:0 auto;padding:32px;background:#F8F3E8;border-radius:12px"><h2 style="color:#2A4A12">Récap de la semaine</h2><p style="color:#7A9A5A">Du ${fmt(monday)} au ${fmt(sunday)}</p><p>Bonjour Touria ! Consultez votre calendrier pour les arrivées et départs de la semaine.</p><p style="color:#2A4A12;font-weight:bold">Bonne semaine ! 🌸</p><p style="font-size:12px;color:#7A9A5A">Chante-Brise · Avenue Damilaville · 76790 Étretat · 06 62 13 62 12</p></div>`
     });
     res.status(200).json({ success: true });
   } catch (e) {
